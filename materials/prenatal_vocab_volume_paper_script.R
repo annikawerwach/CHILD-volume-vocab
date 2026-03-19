@@ -100,28 +100,31 @@ data <- data |>
   filter(!is.na(cdi1) | !is.na(cdi2))
 
 #filter data for all kids who have the cdi1 (n = 25)
-data_cdi1 <- data |> 
+data_cdi1_all <- data |> 
   filter(!is.na(cdi1))
 
 #filter data for all kids who have the cdi2 (n = 24)
-data_cdi2 <- data |> 
+data_cdi2_all <- data |> 
   filter(!is.na(cdi2))
 
 #outlier exclusion
-describe(data_cdi1$cdi1)
+describe(data_cdi1_all$cdi1)
 #M = 21.15, SD = 14.48 -> exclusion of all kids with a score > 50.11 -> ID 104 (score 51), ID 106 (score 52)
-data_cdi1 = data_cdi1 |> 
+
+data_cdi1 = data_cdi1_all |> 
   filter(cdi1 <= 50.11)
 
-describe(data_cdi2$cdi2)
+data_cdi1_outlier = data_cdi1_all |> 
+  filter(cdi1 > 50.11)
+
+
+describe(data_cdi2_all$cdi2)
 #M = 82.04, SD = 20.79 -> exclusion of all kids with a score < 40.46 (as 100 is the maximum anyway) -> ID 123 (score 19)
-data_cdi2 = data_cdi2 |>
+data_cdi2 = data_cdi2_all |>
   filter(cdi2 >= 40.46)
 
-
-#add percentile scores manually
-data_cdi1$cdi1_per = c(25,55,50,65,60,25,50,10,5,5,50,65,20,35,5,15,10,60,40,5,45,40,5,5,5)
-data_cdi2$cdi2_per = c(99,65,60,60,85,99,30,75,10,25,70,25,58,15,70,90,40,99,10,80,85,20,5,10)
+data_cdi2_outlier = data_cdi2_all |>
+  filter(cdi2 < 40.46)
 
 ###Check sample size##
 #Calculate amount of overlapping IDs in the two datasets
@@ -136,34 +139,21 @@ unique_ids_cdi2 <- setdiff(data_cdi2$ID, data_cdi1$ID)
 length(unique_ids_cdi2) #n = 5
 
 
-
-
-### Perform the Shapiro-Wilk test
-#cdi1
-cdi1_vocab = data_cdi1$cdi1_per
-shapiro_test_cdi1 <- shapiro.test(cdi1_vocab) #shapiro wilk test
-print(shapiro_test_cdi1) #p > .05 -> normal distribution
-# Basic histogram
-hist(cdi1_vocab, main="Histogram of Vocabulary Scores", xlab="Vocabulary Scores", col="lightblue", border="black")
-
-#cdi2
-cdi2_vocab = data_cdi2$cdi2_per
-shapiro_test_cdi2 <- shapiro.test(cdi2_vocab) #shapiro wilk test
-print(shapiro_test_cdi2) #p > .05 -> normal distribution
-# Basic histogram
-hist(cdi2_vocab, main="Histogram of Vocabulary Scores", xlab="Vocabulary Scores", col="lightblue", border="black")
-
-
-
 #######################################Descriptive statistics######################################
 #gestation week at MRI scan
 describe(data$age_child)
+data_cdi1_outlier$age_child # 30.3, 31.6
+data_cdi2_outlier$age_child # 30
 
 #age at cdi1 assessment
 describe(data_cdi1$age_18)
+data_cdi1_outlier$age_18 #81.0, 81.1
+data_cdi2_outlier$age_18 # 79.4
 
 #age at cdi2 assessment
 describe(data_cdi2$age_24)
+data_cdi1_outlier$age_24 # 154.6, 133.7
+data_cdi2_outlier$age_24 # 135
 
 #sex
 table(data$sex)
@@ -181,16 +171,23 @@ table(data_cdi2$sex)
 ##foetal brain volume
 ##STG - left
 describe(data$STG_left_fet)
+data_cdi1_outlier$STG_left_fet # 1216, 1080 
+data_cdi2_outlier$STG_left_fet# 1183
 
 ##STG - right
 describe(data$STG_right_fet)
+data_cdi1_outlier$STG_right_fet # 1457, 1352
+data_cdi2_outlier$STG_right_fet # 1204
 
 ##IFG - left
 describe(data$IFG_left_fet)
+data_cdi1_outlier$IFG_left_fet # 2049, 1637
+data_cdi2_outlier$IFG_left_fet# 1540
 
 ##IFG - right
 describe(data$IFG_right_fet)
-
+data_cdi1_outlier$IFG_right_fet # 2437, 1832
+data_cdi2_outlier$IFG_right_fet # 1176
 
 #STG - by sex
 describeBy(data$STG_fet_resid,data$sex)
@@ -317,8 +314,25 @@ summary(fit1)
 lm.beta(fit1)
 
 residuals1 <- resid(fit1)
+fitted1 <- fitted(fit1)
+#linearity check
 qqnorm(residuals1)
 qqline(residuals1)
+# Homoscedasticity check
+plot(fitted1, residuals1,
+     main = "Residuals vs Fitted Values",
+     xlab = "Fitted values", ylab = "Residuals")
+abline(h = 0, col = "red")  # horizontal line at 0
+# Linearity check:  Residuals vs each predictor
+predictors <- model.matrix(fit2)[,-1]  # remove intercept
+par(mfrow=c(ceiling(ncol(predictors)/2),2))
+for (i in 1:ncol(predictors)) {
+  plot(predictors[,i], residuals2,
+       main = paste("Residuals vs", colnames(predictors)[i]),
+       xlab = colnames(predictors)[i], ylab = "Residuals")
+  abline(h = 0, col = "red")
+}
+par(mfrow=c(1,1))
 
 model2 = cdi2 ~  STG * hem + IFG * hem + age_24 + sex_dummy
 fit2 = lm(formula = model2, data=data_cdi2_reg_long)
@@ -326,8 +340,25 @@ summary(fit2)
 lm.beta(fit2)
 
 residuals2 <- resid(fit2)
+fitted2 <- fitted(fit2)
+#normality check
 qqnorm(residuals2)
 qqline(residuals2)
+# Homoscedasticity check
+plot(fitted2, residuals2,
+     main = "Residuals vs Fitted Values",
+     xlab = "Fitted values", ylab = "Residuals")
+abline(h = 0, col = "red")  # horizontal line at 0
+# Linearity check:  Residuals vs each predictor
+predictors <- model.matrix(fit2)[,-1]  # remove intercept
+par(mfrow=c(ceiling(ncol(predictors)/2),2))
+for (i in 1:ncol(predictors)) {
+  plot(predictors[,i], residuals2,
+       main = paste("Residuals vs", colnames(predictors)[i]),
+       xlab = colnames(predictors)[i], ylab = "Residuals")
+  abline(h = 0, col = "red")
+}
+par(mfrow=c(1,1))
 
 #####adjust for multiple comparisons#######
 #IFG
@@ -566,187 +597,4 @@ p2 = grid.arrange(plot1, plot2, plot3, plot4, nrow = 2)
 
 ggsave(p2, file="/Users/werwach/Documents/CHILD/paper_prenatal_volume_vocab/figures/regression_plots_norisk.eps", device="eps")
 
-
-
-
-
-#################################Mediation via stress#######################################
-
-#load stress data
-data_stress = read.csv("CHILD_VA_stress.csv", header = TRUE, sep = ",")
-names(data_stress)[1] <- 'ID'
-
-#filter only relevant data from stress dataframe
-data_stress = data_stress |>
-  filter(redcap_event_name == "prenatal_arm_1")  |>
-  dplyr::select(ID, cohen_total)
-
-data_cdi_stress = data |> 
-  inner_join(data_stress, by = "ID")
-
-describe(data_cdi_stress$cohen_total)
-
-#filter out stress outlier
-data_cdi_stress = data_cdi_stress |> 
-  filter(cohen_total<30 | is.na(cohen_total))
-
-#create sex dummy variable
-data_cdi_stress$sex_dummy <- ifelse(data_cdi_stress$sex == "male", 1, 0)
-
-#ad percentile scores for cdi2
-data_cdi_stress$cdi2_per = c(NA,99,65,60,60,85,99,30,75,10,NA,25,70,25,58,15,70,90,40,99,10,80,85,20,NA,NA,NA,5,10)
-
-###check potential covariates
-
-t.test(data_cdi_stress$cohen_total~data_cdi_stress$sex_dummy) #yes?
-
-t.test(data_cdi_stress$STG_fet~data_cdi_stress$sex_dummy) #no
-
-t.test(data_cdi_stress$age_child~data_cdi_stress$sex_dummy) #no
-
-cor.test(data_cdi_stress$STG_fet, data_cdi_stress$total_volume_fet) #yes
-
-cor.test(data_cdi_stress$STG_fet, data_cdi_stress$age_child) #yes
-
-cor.test(data_cdi_stress$cohen_total, data_cdi_stress$age_child) #no
-
-cor.test(data_cdi_stress$cohen_total, data_cdi_stress$age_mother) #no
-
-cor.test(data_cdi_stress$cdi2_per, data_cdi_stress$age_mother) #no
-
-
-#######regression: PSS-10
-model1 = STG_fet ~  cohen_total + age_child + total_volume_fet + sex_dummy
-fit1 = lm(formula = model1, data=data_cdi_stress)
-summary(fit1)
-
-model2 = cdi2_per ~  cohen_total + age_mother +  STG_fet + total_volume_fet #+sex_dummy
-fit2 = lm(formula = model2, data=data_cdi_stress)
-summary(fit2)
-
-#filter kids who dont have any missing values on relevant variables
-data_cdi_stress_nomiss= data_cdi_stress |> 
-  filter(!is.na(cohen_total) & !is.na(cdi2_per) & !is.na(STG_fet))
-
-#plot
-plot1 = ggplot(data, aes(x=cohen_total, y=STG_fet)) + 
-  geom_point() +
-  geom_smooth(fullrange = TRUE,method='lm', se = FALSE, color = "black")  +
-  theme_classic() +
-  theme(axis.title.y = element_text(margin=margin(r=8), size = 10),
-        axis.title.x = element_text(size = 10),
-        plot.title = element_text(size=14)) +
-  #  xlim(500,1800) +
-  xlab("Maternal PSS-10 score")+
-  #  ylim(50,100) +
-  ylab("Superior temporal brain volume")+
-  ggtitle("A")
-
-
-plot2 = ggplot(data, aes(x=cohen_total, y=cdi2_per)) + 
-  geom_point() +
-  geom_smooth(fullrange = TRUE,method='lm', se = FALSE, color = "black")  +
-  theme_classic() +
-  theme(axis.title.y = element_text(margin=margin(r=8), size = 10),
-        axis.title.x = element_text(size = 10),
-        plot.title = element_text(size=14)) +
-  #  xlim(500,1800) +
-  xlab("Maternal PSS-10 score")+
-  #  ylim(50,100) +
-  ylab("CDI score at 24-36 months")+
-  ggtitle("B")
-
-plot3 = ggplot(data, aes(x=STG_fet, y=cdi2_per)) + 
-  geom_point() +
-  geom_smooth(fullrange = TRUE,method='lm', se = FALSE, color = "black")  +
-  theme_classic() +
-  theme(axis.title.y = element_text(margin=margin(r=8), size = 10),
-        axis.title.x = element_text(size = 10),
-        plot.title = element_text(size=14)) +
-  #  xlim(500,1800) +
-  xlab("Superior temporal brain volume")+
-  #  ylim(50,100) +
-  ylab("CDI score at 24-36 months")+
-  ggtitle("C")
-
-
-
-grid.arrange(plot1, plot2, plot3,  ncol = 3) 
-
-
-####mediation
-library(lavaan)
-
-plot(data_cdi_stress$cdi2_per,data_cdi_stress$cohen_total)
-
-#data_volume_stress=data_volume_stress[-c(15:17,21:23),]
-
-
-model_mediation = '
-# mediator
-STG_fet ~ a * cohen_total +  +a1*sex_dummy +  a3*total_volume_fet + a2*age_child 
-#total effect
-cdi2_per ~ c * cohen_total + b * STG_fet + b4*total_volume_fet 
-
-#indirect effect
-ind1 := a*b
-tot1 := (a*b) + c
-
-'
-
-fit_mediation <- lavaan::sem(model_mediation, data = data_cdi_stress, missing = "fiml")
-summary(fit_mediation, fit = T, standardized = T, rsquare = T)
-
-
-##impute data
-library(mice)
-
-#about 10% average missing data, so maxit = 10
-tempdata <- mice(data_cdi_cohen_med,m=5,maxit=10,meth='pmm',seed=500)
-summary(tempdata)
-data_cdi_cohen_med_miss = complete(tempdata,1)
-
-# Plots of imputed vs. orginal data
-library(lattice)
-# Scatterplot Ozone vs all
-xyplot(tempdata,cdi2_per ~ STG_fet,pch=18,cex=1)
-
-# Density plot original vs imputed dataset
-densityplot(tempdata)
-
-# Another take on the density: stripplot()
-stripplot(tempdata)
-
-
-pfad_a = lm(STG_fet~cohen_total+total_volume_fet+sex_dummy+age_child,data_cdi_stress)
-summary(pfad_a)
-pfad_b_c = lm(cdi2_per~cohen_total + STG_fet + total_volume_fet,data_cdi_stress)
-summary(pfad_b_c)
-
-library(mediation)
-
-results <- mediate(pfad_a, pfad_b_c, 
-                   treat = "cohen_total", mediator = "STG_fet", 
-                   boot = TRUE)
-summary(results)
-
-library(sem)
-library(bmem)
-
-
-
-model_l <- '
-
-# mediator
-STG_fet ~ a * cohen_total + a1*sex + a2*age_child + a3*total_volume_fet
-#total effect
-cdi2_per ~ c * cohen_total + b * STG_fet + + b4*total_volume_fet 
-
-#indirect effect
-ind1 := a*b
-tot1 := (a*b) + c
-'
-
-effects<-c('a*b', 'cp+a*b') 
-nlsy.res<-bmem(data_cdi_cohen_med, model = model_1, method = "list",indirect = effects)
 
